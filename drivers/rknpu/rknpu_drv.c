@@ -76,11 +76,6 @@ static const struct rknpu_irqs_data rknpu_irqs[] = {
 	{ "npu_irq", rknpu_core0_irq_handler }
 };
 
-static const struct rknpu_irqs_data rk3576_npu_irqs[] = {
-	{ "npu0_irq", rknpu_core0_irq_handler },
-	{ "npu1_irq", rknpu_core1_irq_handler }
-};
-
 static const struct rknpu_irqs_data rk3588_npu_irqs[] = {
 	{ "npu0_irq", rknpu_core0_irq_handler },
 	{ "npu1_irq", rknpu_core1_irq_handler },
@@ -107,57 +102,6 @@ static const struct rknpu_amount_data rknpu_core_amount = {
 	.offset_dt_rd = 0x2438,
 	.offset_wt_rd = 0x243c,
 };
-
-static void rk3576_state_init(struct rknpu_device *rknpu_dev)
-{
-	void __iomem *rknpu_core_base = rknpu_dev->base[0];
-
-	writel(0x1, rknpu_core_base + 0x10);
-	writel(0, rknpu_core_base + 0x1004);
-	writel(0x80000000, rknpu_core_base + 0x1024);
-	writel(1, rknpu_core_base + 0x1004);
-	writel(0x80000000, rknpu_core_base + 0x1024);
-	writel(0x1e, rknpu_core_base + 0x1004);
-}
-
-static int rk3576_cache_sgt_init(struct rknpu_device *rknpu_dev)
-{
-	struct sg_table *sgt = NULL;
-	struct scatterlist *sgl = NULL;
-	uint64_t block_size_kb[4] = { 448, 64, 448, 64 };
-	uint64_t block_offset_kb[4] = { 0, 896, 448, 960 };
-	int core_num = rknpu_dev->config->num_irqs;
-	int ret = 0, i = 0, j = 0;
-
-	for (i = 0; i < core_num; i++) {
-		sgt = kzalloc(sizeof(struct sg_table), GFP_KERNEL);
-		if (!sgt)
-			goto out_free_table;
-		ret = sg_alloc_table(sgt, core_num, GFP_KERNEL);
-		if (ret) {
-			kfree(sgt);
-			goto out_free_table;
-		}
-		rknpu_dev->cache_sgt[i] = sgt;
-		for_each_sgtable_sg(sgt, sgl, j) {
-			sg_set_page(sgl, NULL,
-				    block_size_kb[i * core_num + j] * 1024,
-				    block_offset_kb[i * core_num + j] * 1024);
-		}
-	}
-	return 0;
-
-out_free_table:
-	for (i = 0; i < core_num; i++) {
-		if (rknpu_dev->cache_sgt[i]) {
-			sg_free_table(rknpu_dev->cache_sgt[i]);
-			kfree(rknpu_dev->cache_sgt[i]);
-			rknpu_dev->cache_sgt[i] = NULL;
-		}
-	}
-
-	return ret;
-}
 
 static const struct rknpu_config rk356x_rknpu_config = {
 	.bw_priority_addr = 0xfe180008,
@@ -264,27 +208,6 @@ static const struct rknpu_config rk3562_rknpu_config = {
 	.cache_sgt_init = NULL,
 };
 
-static const struct rknpu_config rk3576_rknpu_config = {
-	.bw_priority_addr = 0x0,
-	.bw_priority_length = 0x0,
-	.dma_mask = DMA_BIT_MASK(40),
-	.pc_data_amount_scale = 2,
-	.pc_task_number_bits = 16,
-	.pc_task_number_mask = 0xffff,
-	.pc_task_status_offset = 0x48,
-	.pc_dma_ctrl = 1,
-	.irqs = rk3576_npu_irqs,
-	.num_irqs = ARRAY_SIZE(rk3576_npu_irqs),
-	.nbuf_phyaddr = 0x3fe80000,
-	.nbuf_size = 1024 * 1024,
-	.max_submit_number = (1 << 16) - 1,
-	.core_mask = 0x3,
-	.amount_top = &rknpu_top_amount,
-	.amount_core = &rknpu_core_amount,
-	.state_init = rk3576_state_init,
-	.cache_sgt_init = rk3576_cache_sgt_init,
-};
-
 /* driver probe and init */
 static const struct of_device_id rknpu_of_match[] = {
 	{
@@ -306,10 +229,6 @@ static const struct of_device_id rknpu_of_match[] = {
 	{
 		.compatible = "rockchip,rk3562-rknpu",
 		.data = &rk3562_rknpu_config,
-	},
-	{
-		.compatible = "rockchip,rk3576-rknpu",
-		.data = &rk3576_rknpu_config,
 	},
 	{},
 };
